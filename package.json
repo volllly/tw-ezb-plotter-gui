@@ -1,0 +1,23 @@
+{
+  "name": "dimm_pc",
+  "version": "0.0.0",
+  "description": "",
+  "repository": {
+    "type": "git",
+    "url": "github.com:volllly/tw-ezb-dimm-pc.git"
+  },
+  "main": "./dist/main.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "paul volavsek",
+  "license": "UNLICENSED",
+  "dependencies": {
+    "npm": "^5.8.0",
+    "serialport": "^6.1.1"
+  },
+  "devDependencies": {
+    "electron": "^2.0.0-beta.7",
+    "electron-rebuild": "^1.7.3"
+  }
+}
