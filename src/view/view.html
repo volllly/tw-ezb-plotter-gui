@@ -1,0 +1,223 @@
+
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <title>XMC CNC</title>
+    <link rel="stylesheet" href="./view.css" />
+  </head>
+  <body>
+    <div class="titlebar"><button class="min">_</button><button class="x">x</button></div>
+    <div class="content">
+      <div id='drawing'></div>
+    </div>
+  </body>
+
+  <script>
+    const fs = require('fs');
+    const electron = require('electron'); 
+    const svgson = require('svgson');
+    const svgo = new (require('svgo'))({
+      plugins: [
+        {
+          cleanupAttrs: true,
+        }, {
+          removeDoctype: true,
+        },{
+          removeXMLProcInst: true,
+        },{
+          removeComments: true,
+        },{
+          removeMetadata: true,
+        },{
+          removeTitle: true,
+        },{
+          removeDesc: true,
+        },{
+          removeUselessDefs: true,
+        },{
+          removeEditorsNSData: true,
+        },{
+          removeEmptyAttrs: true,
+        },{
+          removeHiddenElems: true,
+        },{
+          removeEmptyText: true,
+        },{
+          removeEmptyContainers: true,
+        },{
+          removeViewBox: true,
+        },{
+          cleanUpEnableBackground: true,
+        },{
+          convertStyleToAttrs: true,
+        },{
+          convertColors: true,
+        },{
+          convertPathData: true,
+        },{
+          convertTransform: true,
+        },{
+          removeUnknownsAndDefaults: true,
+        },{
+          removeNonInheritableGroupAttrs: true,
+        },{
+          removeUselessStrokeAndFill: true,
+        },{
+          removeUnusedNS: true,
+        },{
+          cleanupIDs: true,
+        },{
+          cleanupNumericValues: true,
+        },{
+          moveElemsAttrsToGroup: false,
+        },{
+          moveGroupAttrsToElems: true,
+        },{
+          collapseGroups: true,
+        },{
+          removeRasterImages: true,
+        },{
+          mergePaths: true,
+        },{
+          convertShapeToPath: true,
+        },{
+          sortAttrs: true,
+        },{
+          transformsWithOnePath: true,
+        },{
+          removeDimensions: false,
+        }/* ,{
+          removeAttrs: {attrs: '(stroke|fill)'},
+        } */
+      ]
+    });
+    const svgParse = require('svg-parse');
+
+    const view = require('./view.js');
+
+    electron.webFrame.setVisualZoomLevelLimits(1, 1); //disable user zoom
+    
+    document.onreadystatechange = function () {
+      if (document.readyState == "complete") { //document ready
+        document.querySelector('.titlebar .min').addEventListener('click', (e) => { //minmize button
+          electron.remote.getCurrentWindow().minimize(); 
+        });
+
+        document.querySelector('.titlebar .x').addEventListener('click', (e) => { //close button
+          electron.remote.getCurrentWindow().close();
+        }); 
+      }
+    };
+    
+    fs.readFile('./src/view/test3.svg', 'utf-8', (err, data) => {
+      svgo.optimize(data).then((result) => {
+        fs.writeFile('./src/view/test_.svg', result.data, (err) => {});
+        console.log(result);
+        svgson(
+          result.data,
+          { pathsKey: 'paths' },
+          (result) => {
+            console.log(result);
+            if(result.paths.attrs.width.endsWith('cm')) {
+              result.paths.attrs.width = result.paths.attrs.width.substring(0, result.paths.attrs.width.length - 'cm'.length) * 100;
+            }
+            if(result.paths.attrs.height.endsWith('cm')) {
+              result.paths.attrs.height = result.paths.attrs.height.substring(0, result.paths.attrs.height.length - 'cm'.length) * 100;
+            }
+            if(!result.paths.attrs.viewBox || result.paths.attrs.viewBox.split(' ').length != 4) {
+              result.paths.attrs.viewBox = '0 0 0 0';
+            }
+            let drawing = {
+              dimensions: {
+                width:  result.paths.attrs.width,
+                height: result.paths.attrs.height
+              },
+              viewbox: {
+                x:      result.paths.attrs.viewBox.split(' ')[0],
+                y:      result.paths.attrs.viewBox.split(' ')[1],
+                width:  result.paths.attrs.viewBox.split(' ')[2],
+                height: result.paths.attrs.viewBox.split(' ')[3]
+              },
+              paths: []
+            };
+            for(let i = 0; i < result.paths.childs.length; i++) {
+              let position = {
+                starting: {
+                  x: null,
+                  y: null
+                },
+                last: {
+                  x: null,
+                  y: null
+                },
+                current: {
+                  x: 0,
+                  y: 0
+                },
+                convertToAbsolute: function(path) {
+                  console.log(path);
+                  for(let j = 0; j < path.length; j++) {
+                    this.last.x = this.current.x;
+                    this.last.y = this.current.y;
+
+                    if(path[j].props) {
+                      if(path[j].props.relative) {
+                        if(path[j].type == 'curveTo') {
+                          path[j].props.x1 += this.current.x;
+                          path[j].props.y1 += this.current.y;
+                          path[j].props.x2 += this.current.x;
+                          path[j].props.y2 += this.current.y;
+                        }
+                        this.current.x += path[j].props.x;
+                        this.current.y += path[j].props.y;
+                        path[j].props.x = this.current.x;
+                        path[j].props.y = this.current.y;
+                        path[j].props.relative = false;
+                      } else {
+                        this.current.x = path[j].props.x;
+                        this.current.y = path[j].props.y;
+                      }
+                    }
+                    
+                    if(this.starting.x === null && this.starting.y === null) {
+                      if(path[j].type == 'moveTo') {
+                        this.starting.x = this.current.x;
+                        this.starting.y = this.current.y;
+                      } else {
+                        this.starting.x = this.last.x;
+                        this.starting.y = this.last.y;
+                      }
+                    }
+
+                    if(path[j].type == 'close') {
+                      path[j].type = 'lineTo';
+                      path[j].props = {
+                        x: this.starting.x,
+                        y: this.starting.y,
+                        relative: false
+                      };
+                      this.starting.x = null;
+                      this.starting.y = null;
+                      
+                      this.current.x = path[j].props.x;
+                      this.current.y = path[j].props.y;
+                    }
+                  }
+                  return path;
+                }
+              };
+              
+
+              result.paths.childs[i].attrs.d_path = svgParse.parse(result.paths.childs[i].attrs.d, { generalize: true });
+              drawing.paths.push(position.convertToAbsolute(result.paths.childs[i].attrs.d_path));
+            }
+            view.canvas(drawing);
+          }
+        );
+      });
+    });
+    
+  </script>
+</html>
