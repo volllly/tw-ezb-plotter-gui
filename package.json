@@ -19,7 +19,7 @@
     "winston": "^2.4.2"
   },
   "devDependencies": {
-    "electron": "^2.0.0",
+    "electron": "^2.0.1",
     "electron-rebuild": "^1.7.3"
   }
 }
