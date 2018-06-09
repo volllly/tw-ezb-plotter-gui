@@ -1,6 +1,8 @@
 # Plotting Commands 
 
-All actions for plotting one image get a id and are to be executed in order.
+All actions for plotting one image get a ID and are to be executed in order.
+
+All numbers are to be converted into base 16 strings for transmission.
 
 Every command is acknowledged with ```$ID:ACK#```. If no acknowledgement is received the message is resent after a short time.
 
