@@ -4,7 +4,6 @@ module.exports = {
   canvas: function(drawing) {
     const p5 = require('p5');
     this.figures = [];
-    console.log(drawing);
     new p5((p) => {
         p.setup = () => {
           for(let i = 0; i < drawing.paths.length; i++) {
@@ -44,15 +43,14 @@ module.exports = {
                   this.figures.push({
                     type: 'arc',
                     props: {
-                      x1: position.x,
-                      x2: position.x,
-                      x2: drawing.paths[i][j].props.x,
-                      y2: drawing.paths[i][j].props.y,
+                      x: drawing.paths[i][j].props.x,
+                      y: drawing.paths[i][j].props.x,
+                      cx: drawing.paths[i][j].props.cx,
+                      cy: drawing.paths[i][j].props.cy,
                       w: drawing.paths[i][j].props.rx,
                       h: drawing.paths[i][j].props.ry,
-                      rot: drawing.paths[i][j].props.xAxisRotation,
-                      l: null,
-                      s: null
+                      t1: drawing.paths[i][j].props.t1,
+                      dt: drawing.paths[i][j].props.dt
                     }
                   });
                   break;
@@ -61,7 +59,6 @@ module.exports = {
               position.y = drawing.paths[i][j].props.y;
             }
           }
-          console.log(this.figures);
           p.createCanvas(drawing.dimensions.width, drawing.dimensions.height);
         }
         
@@ -79,11 +76,11 @@ module.exports = {
                 p.bezier(this.figures[i].props.x1, this.figures[i].props.y1, this.figures[i].props.x2, this.figures[i].props.y2, this.figures[i].props.x3, this.figures[i].props.y3, this.figures[i].props.x4, this.figures[i].props.y4);
                 break;
               case 'arc':
-                //p.arc(this.figures[i].props.x, this.figures[i].props.y, this.figures[i].props.w, this.figures[i].props.h, this.figures[i].props.start, this.figures[i].props.xAxisRotation + 6, p.CHORD);
                 p.push();
-                p.translate(this.figures[i].props.x2, this.figures[i].props.y2);
-                p.rotate(this.figures[i].props.rot);
-                p.ellipse((this.figures[i].props.x2 + this.figures[i].props.x1) / 2, (this.figures[i].props.y2 + this.figures[i].props.y1) / 2, this.figures[i].props.w, this.figures[i].props.h);
+                p.translate(this.figures[i].props.cx, this.figures[i].props.cy);
+                p.rotate(-this.figures[i].props.t1);
+                p.arc(0, 0, 2 * this.figures[i].props.w, 2 * this.figures[i].props.h, -this.figures[i].props.t1, -this.figures[i].props.dt);
+                //p.ellipse(0, 0, 2 * this.figures[i].props.w, 2 * this.figures[i].props.h);
                 p.pop();
                 break;
             }
