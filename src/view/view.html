@@ -8,7 +8,7 @@
     <link rel="stylesheet" href="./view.css" />
   </head>
   <body>
-    <div class="titlebar"><button class="min">_</button><button class="x">x</button></div>
+    <div class="titlebar"><button class="min">_</button><button class="x">x</button><button class="load">load</button><button class="port"></button><button class="connect">connect</button><button class="start">start</button></div>
     <div class="content">
       <div id='drawing'></div>
     </div>
@@ -96,9 +96,14 @@
     const svgParse = require('svg-parse');
 
     const view = require('./view.js');
+    const Comm = require('../comm/comm.js');
 
     electron.webFrame.setVisualZoomLevelLimits(1, 1); //disable user zoom
-    
+
+    let svg = null;
+    let comm = new Comm();
+    let portnr = 0;
+
     document.onreadystatechange = function () {
       if (document.readyState == "complete") { //document ready
         document.querySelector('.titlebar .min').addEventListener('click', (e) => { //minmize button
@@ -108,165 +113,140 @@
         document.querySelector('.titlebar .x').addEventListener('click', (e) => { //close button
           electron.remote.getCurrentWindow().close();
         }); 
+
+        document.querySelector('.titlebar .load').addEventListener('click', (e) => { //load button
+          electron.remote.dialog.showOpenDialog({
+              properties: ['openFile'],
+              filters: [{ name: 'SVG', extensions: ['svg']}]
+          }, function (files) {
+              if (files !== undefined) {
+                  loadFile(files[0]);
+              }
+          });
+        });
+        document.querySelector('.titlebar .port').addEventListener('click', async (e) => { //load button
+          let ports = await comm.ports();
+          portnr = (portnr + 1)%ports.length;
+          let port = ports[portnr];
+          document.querySelector('.titlebar .port').innerHTML = (port) ? port.comName : 'undefined';
+        }); 
+        document.querySelector('.titlebar .port').dispatchEvent(new Event('click'));
+        document.querySelector('.titlebar .connect').addEventListener('click', async (e) => { //load button
+          if(document.querySelector('.titlebar .port').innerHTML !== 'undefined') {
+            comm.connect(document.querySelector('.titlebar .port').innerHTML);
+          }
+        }); 
+        document.querySelector('.titlebar .start').addEventListener('click', (e) => comm.start(svg));
       }
     };
-    
-    fs.readFile('./src/view/test3.svg', 'utf-8', (err, data) => {
-      svgo.optimize(data).then((result) => {
-        fs.writeFile('./src/view/test_.svg', result.data, (err) => {});
-        svgson(
-          result.data,
-          { pathsKey: 'paths' },
-          (result) => {
-            if(result.paths.attrs.width.endsWith('cm')) {
-              result.paths.attrs.width = result.paths.attrs.width.substring(0, result.paths.attrs.width.length - 'cm'.length) * 100;
-            }
-            if(result.paths.attrs.height.endsWith('cm')) {
-              result.paths.attrs.height = result.paths.attrs.height.substring(0, result.paths.attrs.height.length - 'cm'.length) * 100;
-            }
-            if(!result.paths.attrs.viewBox || result.paths.attrs.viewBox.split(' ').length != 4) {
-              result.paths.attrs.viewBox = '0 0 0 0';
-            }
-            let drawing = {
-              dimensions: {
-                width:  result.paths.attrs.width,
-                height: result.paths.attrs.height
-              },
-              viewbox: {
-                x:      result.paths.attrs.viewBox.split(' ')[0],
-                y:      result.paths.attrs.viewBox.split(' ')[1],
-                width:  result.paths.attrs.viewBox.split(' ')[2],
-                height: result.paths.attrs.viewBox.split(' ')[3]
-              },
-              paths: []
-            };
-            for(let i = 0; i < result.paths.childs.length; i++) {
-              let position = {
-                starting: {
-                  x: null,
-                  y: null
-                },
-                last: {
-                  x: null,
-                  y: null
-                },
-                current: {
-                  x: 0,
-                  y: 0
-                },
-                convertToAbsolute: function(path) {
-                  for(let j = 0; j < path.length; j++) {
-                    this.last.x = this.current.x;
-                    this.last.y = this.current.y;
 
-                    if(path[j].props) {
-                      if(path[j].props.relative) {
-                        if(path[j].type == 'curveTo') {
-                          path[j].props.x1 += this.current.x;
-                          path[j].props.y1 += this.current.y;
-                          path[j].props.x2 += this.current.x;
-                          path[j].props.y2 += this.current.y;
+    function loadFile(filename) {
+      fs.readFile(filename, 'utf-8', async (err, data) => {
+        svgo.optimize(data).then(async (result) => {
+          svgson(
+            result.data,
+            { pathsKey: 'paths' },
+            async (result) => {
+              if(result.paths.attrs.width.endsWith('cm')) {
+                result.paths.attrs.width = result.paths.attrs.width.substring(0, result.paths.attrs.width.length - 'cm'.length) * 100;
+              }
+              if(result.paths.attrs.height.endsWith('cm')) {
+                result.paths.attrs.height = result.paths.attrs.height.substring(0, result.paths.attrs.height.length - 'cm'.length) * 100;
+              }
+              if(!result.paths.attrs.viewBox || result.paths.attrs.viewBox.split(' ').length != 4) {
+                result.paths.attrs.viewBox = '0 0 0 0';
+              }
+              let drawing = {
+                dimensions: {
+                  width:  result.paths.attrs.width,
+                  height: result.paths.attrs.height
+                },
+                viewbox: {
+                  x:      result.paths.attrs.viewBox.split(' ')[0],
+                  y:      result.paths.attrs.viewBox.split(' ')[1],
+                  width:  result.paths.attrs.viewBox.split(' ')[2],
+                  height: result.paths.attrs.viewBox.split(' ')[3]
+                },
+                paths: []
+              };
+              for(let i = 0; i < result.paths.childs.length; i++) {
+                let position = {
+                  starting: {
+                    x: null,
+                    y: null
+                  },
+                  last: {
+                    x: null,
+                    y: null
+                  },
+                  current: {
+                    x: 0,
+                    y: 0
+                  },
+                  convertToAbsolute: async function(path) {
+                    for(let j = 0; j < path.length; j++) {
+                      this.last.x = this.current.x;
+                      this.last.y = this.current.y;
+
+                      if(path[j].props) {
+                        if(path[j].props.relative) {
+                          if(path[j].type == 'curveTo') {
+                            path[j].props.x1 += this.current.x;
+                            path[j].props.y1 += this.current.y;
+                            path[j].props.x2 += this.current.x;
+                            path[j].props.y2 += this.current.y;
+                          }
+                          this.current.x += path[j].props.x;
+                          this.current.y += path[j].props.y;
+                          path[j].props.x = this.current.x;
+                          path[j].props.y = this.current.y;
+                          path[j].props.relative = false;
+                        } else {
+                          this.current.x = path[j].props.x;
+                          this.current.y = path[j].props.y;
                         }
-                        this.current.x += path[j].props.x;
-                        this.current.y += path[j].props.y;
-                        path[j].props.x = this.current.x;
-                        path[j].props.y = this.current.y;
-                        path[j].props.relative = false;
-                      } else {
+                      }
+
+                      if(this.starting.x === null && this.starting.y === null) {
+                        if(path[j].type == 'moveTo') {
+                          this.starting.x = this.current.x;
+                          this.starting.y = this.current.y;
+                        } else {
+                          this.starting.x = this.last.x;
+                          this.starting.y = this.last.y;
+                        }
+                      }
+
+                      if(path[j].type == 'close') {
+                        path[j].type = 'lineTo';
+                        path[j].props = {
+                          x: this.starting.x,
+                          y: this.starting.y,
+                          relative: false
+                        };
+                        this.starting.x = null;
+                        this.starting.y = null;
+                        
                         this.current.x = path[j].props.x;
                         this.current.y = path[j].props.y;
                       }
                     }
-                    
-                    if(path[j].type == 'arc') {
-                      //F.6.5
-                      x1_ = Math.cos((Math.PI/180) * path[j].props.xAxisRotation) * ((this.last.x - path[j].props.x) / 2) + Math.sin((Math.PI/180) * path[j].props.xAxisRotation) * ((this.last.y - path[j].props.y) / 2);
-                      y1_ = -Math.sin((Math.PI/180) * path[j].props.xAxisRotation) * ((this.last.x - path[j].props.x) / 2) + Math.cos((Math.PI/180) * path[j].props.xAxisRotation) * ((this.last.y - path[j].props.y) / 2);
-                      
-                      let sign = ((path[j].props.largeArcFlag == path[j].props.sweepFlag)? (-1): (1));
-                      let sqrt = Math.sqrt(
-                        (
-                            (path[j].props.rx*path[j].props.ry ** 2)
-                          - (path[j].props.rx*y1_ ** 2)
-                          - (path[j].props.ry*x1_ ** 2)
-                        )
-                        / (
-                            (path[j].props.rx*y1_ ** 2)
-                          + (path[j].props.ry*x1_ ** 2)
-                        )
-                      );
-
-                      if(isNaN(sqrt)) { sqrt = 0; } // is sqrt is negative due to floatingpoint errors
-
-                      cx_ = sign * sqrt *         (path[j].props.rx*y1_ / path[j].props.ry);
-                      cy_ = sign * sqrt * (-1) *  (path[j].props.ry*x1_ / path[j].props.rx);
-
-
-                      cx = Math.cos((Math.PI/180) * path[j].props.xAxisRotation) * cx_ - Math.sin((Math.PI/180) * path[j].props.xAxisRotation) * cy_ + (this.last.x + path[j].props.x) / 2;
-                      cy = Math.sin((Math.PI/180) * path[j].props.xAxisRotation) * cx_ + Math.cos((Math.PI/180) * path[j].props.xAxisRotation) * cy_ + (this.last.y + path[j].props.y) / 2;
-                      
-                      let angle = (ux, uy, vx, vy) => {
-                        let sign = Math.sign(ux*vy - uy*vx);
-                        let norm = Math.sqrt(ux ** 2 + uy ** 2) * Math.sqrt(vx ** 2 + vy ** 2);
-                        return sign * Math.acos((ux*vx + uy*vy) / norm) * (180/Math.PI);
-                      };
-                      theta1 = angle(1, 0, (x1_ - cx_) / path[j].props.rx, (y1_ - cy_) / path[j].props.ry);
-                      dtheta = angle((x1_ - cx_) / path[j].props.rx, (y1_ - cy_) / path[j].props.ry, (-x1_ - cx_) / path[j].props.rx, (-y1_ - cy_) / path[j].props.ry) % 360;
-                      if(path[j].props.sweepFlag === 0 && dtheta > 0) {
-                        dtheta -= 360;
-                      }
-                      if(path[j].props.sweepFlag === 1 && dtheta < 0) {
-                        dtheta += 360;
-                      }
-                      path[j].props = {
-                        x: path[j].props.x,
-                        y: path[j].props.y,
-                        rx: path[j].props.rx,
-                        ry: path[j].props.ry,
-                        cx: cx,
-                        cy: cy,
-                        t1: theta1,
-                        dt: dtheta,
-                      };
-                    }
-
-                    if(this.starting.x === null && this.starting.y === null) {
-                      if(path[j].type == 'moveTo') {
-                        this.starting.x = this.current.x;
-                        this.starting.y = this.current.y;
-                      } else {
-                        this.starting.x = this.last.x;
-                        this.starting.y = this.last.y;
-                      }
-                    }
-
-                    if(path[j].type == 'close') {
-                      path[j].type = 'lineTo';
-                      path[j].props = {
-                        x: this.starting.x,
-                        y: this.starting.y,
-                        relative: false
-                      };
-                      this.starting.x = null;
-                      this.starting.y = null;
-                      
-                      this.current.x = path[j].props.x;
-                      this.current.y = path[j].props.y;
-                    }
+                    return path;
                   }
-                  return path;
-                }
-              };
-              
+                };
+                
 
-              result.paths.childs[i].attrs.d_path = svgParse.parse(result.paths.childs[i].attrs.d, { generalize: true });
-              drawing.paths.push(position.convertToAbsolute(result.paths.childs[i].attrs.d_path));
+                result.paths.childs[i].attrs.d_path = svgParse.parse(result.paths.childs[i].attrs.d, { generalize: true });
+                drawing.paths.push(await position.convertToAbsolute(result.paths.childs[i].attrs.d_path));
+              }
+              svg = drawing;
+              document.querySelector('#drawing .p5Canvas') && document.querySelector('#drawing .p5Canvas').remove();
+              await view.canvas(svg);
             }
-            view.canvas(drawing);
-          }
-        );
+          );
+        });
       });
-    });
+    }
     
   </script>
 </html>

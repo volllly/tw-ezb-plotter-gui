@@ -37,7 +37,7 @@ function createThreads() {
       slashes: true
     }));
 
-    threads.view.webContents.openDevTools({detach:true});
+    threads.view.webContents.openDevTools({mode: 'detach'});
 
     threads.view.on('closed', () => {
       threads.view = null
